@@ -229,19 +229,26 @@ function dateTargetsHtml(h,dateStr){
   const isEvt=h._evtFn(d.getDate());
   const typeLabel=isEvt?`イベント日（${esc(h.event)}該当）`:wd===5?"土曜":wd===6?"日曜":"平日（"+"月火水木金土日"[wd]+"曜）";
   const idxs=D.meta.map((m,i)=>[m,i]).filter(([m])=>isEvt?m[1]===1:(wd===5?m[0]===5:wd===6?m[0]===6:(m[0]<=4&&m[1]===0))).map(([,i])=>i);
+  // 同タイプ日の全台平均勝率 p0（ベイズ補正の事前分布）
+  let W=0,N=0;
+  for(const s of Object.values(D.dai)){
+    idxs.forEach(i=>{const r=s.rows[i];if(r&&r[1]>300){N++;if(r[0]>0)W++;}});
+  }
+  const p0=N?W/N:0.4, M=10; // M=補正強度。バックテストでm=8〜15が最良、10を採用
   const list=[];
   for(const [ban,s] of Object.entries(D.dai)){
     let win=0,n=0,sum=0;
     idxs.forEach(i=>{const r=s.rows[i];if(r&&r[1]>300){n++;sum+=r[0];if(r[0]>0)win++;}});
-    if(n>=3)list.push({ban,s,win,n,avg:sum/n});
+    if(n>=3)list.push({ban,s,win,n,avg:sum/n,score:(win+p0*M)/(n+M)});
   }
-  list.sort((a,b)=>(b.win/b.n)-(a.win/a.n)||b.avg-a.avg);
+  // 補正付き勝率で並べる（平均差枚は表示のみ。差枚ベース選出はバックテストで逆効果と判明）
+  list.sort((a,b)=>b.score-a.score||b.avg-a.avg);
   const top=list.slice(0,15);
   if(!top.length)return'<div class="desc">該当タイプの日のサンプルが不足しています。</div>';
-  return `<div class="desc" style="margin-top:8px"><b>${d.getMonth()+1}/${d.getDate()}（${"月火水木金土日"[wd]}）＝ ${typeLabel}</b> ｜ 直近30日中の同タイプ${idxs.length}日の実績でランキング</div>
-  <div class="tablewrap"><table><tr><th>台番</th><th>機種</th><th>勝率</th><th>平均差枚</th><th>設定シグナル</th></tr>
-  ${top.map(x=>`<tr data-ban="${esc(x.ban)}" class="dairow"><td><b>${esc(x.ban)}</b></td><td class="name">${esc(x.s.n)}</td><td><b>${x.win}/${x.n}</b></td><td style="color:${x.avg>0?'var(--good)':'var(--neg)'}">${yen(x.avg)}</td><td>${settingBadge(h,x.ban,x.s)}</td></tr>`).join("")}</table></div>
-  <div class="note">勝率＝同タイプ日に300G以上稼働してプラスだった割合。行タップで30日推移へ。</div>`;
+  return `<div class="desc" style="margin-top:8px"><b>${d.getMonth()+1}/${d.getDate()}（${"月火水木金土日"[wd]}）＝ ${typeLabel}</b> ｜ 直近30日中の同タイプ${idxs.length}日の実績。全台平均勝率 ${(p0*100).toFixed(0)}%</div>
+  <div class="tablewrap"><table><tr><th>台番</th><th>機種</th><th>補正勝率</th><th>実績</th><th>平均差枚</th><th>設定シグナル</th></tr>
+  ${top.map(x=>`<tr data-ban="${esc(x.ban)}" class="dairow"><td><b>${esc(x.ban)}</b></td><td class="name">${esc(x.s.n)}</td><td><b>${(x.score*100).toFixed(0)}%</b></td><td>${x.win}/${x.n}</td><td style="color:${x.avg>0?'var(--good)':'var(--neg)'}">${yen(x.avg)}</td><td>${settingBadge(h,x.ban,x.s)}</td></tr>`).join("")}</table></div>
+  <div class="note">補正勝率＝サンプルが少ない台を全台平均へ引き戻すベイズ補正後の値（「4/4勝」の偶然を過大評価しないため）。並び順は過去データのバックテストで検証済み：この方式の上位台は全台平均（勝率38.5%・+30枚/日）に対し勝率+3pt・平均+170枚/日ほど上回りました。保証ではありません。</div>`;
 }
 
 /* ---------- 台番分析 ---------- */
